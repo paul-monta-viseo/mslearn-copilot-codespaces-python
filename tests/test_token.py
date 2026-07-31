@@ -12,6 +12,12 @@ def test_ping():
     assert response.json() == {"status": "ok"}
 
 
+def test_health():
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
 def test_generate_default_length():
     response = client.post("/generate", json={})
     assert response.status_code == 200

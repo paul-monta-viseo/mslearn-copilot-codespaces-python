@@ -11,6 +11,11 @@ def ping():
     return {"status": "ok"}
 
 
+@router.get("/health")
+def health():
+    return {"status": "ok"}
+
+
 @router.post("/generate")
 def generate(body: Body, service: TokenService = Depends(TokenService)):
     """
