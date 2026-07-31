@@ -1,0 +1,5 @@
+{
+  "hooks": [
+    { "event": "post-write", "command": ".github/hooks/post-write.sh" }
+  ]
+}
