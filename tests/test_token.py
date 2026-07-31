@@ -1,8 +1,18 @@
+import asyncio
+from unittest.mock import Mock
+
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
+from webapp.app.middleware import InProcessRateLimiter
 from webapp.app.services.token_service import TokenService, get_token_service
-from webapp.main import app
+from webapp.main import (
+    app,
+    http_exception_handler,
+    unhandled_exception_handler,
+    validation_exception_handler,
+)
 
 client = TestClient(app)
 
@@ -22,6 +32,44 @@ def test_ping():
     response = client.get("/ping")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_root_serves_landing_page():
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "Codespaces & FastAPI" in response.text
+
+
+def test_http_exception_handler_returns_detail():
+    response = asyncio.run(
+        http_exception_handler(None, HTTPException(status_code=418, detail="teapot"))
+    )
+
+    assert response.status_code == 418
+    assert response.body == b'{"detail":"teapot"}'
+
+
+def test_validation_exception_handler_returns_errors():
+    error = Mock()
+    error.errors.return_value = [{"loc": ["body"], "msg": "invalid"}]
+
+    response = asyncio.run(validation_exception_handler(None, error))
+
+    assert response.status_code == 422
+    assert response.body == (
+        b'{"detail":"Request validation failed","errors":'
+        b'[{"loc":["body"],"msg":"invalid"}]}'
+    )
+
+
+def test_unhandled_exception_handler_returns_safe_response():
+    response = asyncio.run(
+        unhandled_exception_handler(None, RuntimeError("internal failure"))
+    )
+
+    assert response.status_code == 500
+    assert response.body == b'{"detail":"An unexpected server error occurred."}'
 
 
 def test_health():
@@ -140,3 +188,26 @@ def test_rate_limit_returns_retry_information():
     )
     assert limited_response.headers["Retry-After"] == "60"
     assert limited_response.headers["X-RateLimit-Remaining"] == "0"
+
+
+def test_token_service_dependency_returns_singleton():
+    assert get_token_service() is not None
+
+
+def test_rate_limiter_rejects_invalid_configuration():
+    with pytest.raises(ValueError):
+        InProcessRateLimiter(limit=0)
+
+    with pytest.raises(ValueError):
+        InProcessRateLimiter(window=0)
+
+
+def test_rate_limiter_expires_old_requests(mocker):
+    mocker.patch(
+        "webapp.app.middleware.monotonic",
+        side_effect=[0.0, 2.0],
+    )
+    limiter = InProcessRateLimiter(limit=1, window=1.0)
+
+    assert limiter.check("client") == (True, 0)
+    assert limiter.check("client") == (True, 0)

@@ -1,7 +1,11 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from webapp.app.services.user_service import UserService, get_user_service
+from webapp.app.services.user_service import (
+    UserService,
+    get_user_service,
+    user_service,
+)
 from webapp.main import app
 
 
@@ -93,3 +97,7 @@ def test_get_user_invalid_identifier():
 
     assert response.status_code == 422
     assert response.json()["detail"] == "Request validation failed"
+
+
+def test_user_service_dependency_returns_singleton():
+    assert get_user_service() is user_service
