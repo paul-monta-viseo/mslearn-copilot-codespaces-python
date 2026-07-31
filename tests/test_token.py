@@ -11,8 +11,11 @@ client = TestClient(app)
 def fresh_token_service():
     service = TokenService()
     app.dependency_overrides[get_token_service] = lambda: service
+    app.state.rate_limiter.reset()
+    app.state.rate_limiter.limit = 60
     yield
     app.dependency_overrides.clear()
+    app.state.rate_limiter.reset()
 
 
 def test_ping():
@@ -39,6 +42,14 @@ def test_generate_custom_length():
     response = client.post("/generate", json={"length": 10})
     assert response.status_code == 200
     assert len(response.json()["token"]) == 10
+
+
+@pytest.mark.parametrize("length", [0, 89, "invalid"])
+def test_generate_rejects_invalid_length(length):
+    response = client.post("/generate", json={"length": length})
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Request validation failed"
 
 
 def test_generate_mocked_service(mocker):
@@ -116,3 +127,16 @@ def test_token_openapi_documents_pagination():
     assert operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith(
         "/PaginatedResponse"
     )
+
+
+def test_rate_limit_returns_retry_information():
+    app.state.rate_limiter.limit = 1
+
+    assert client.get("/ping").status_code == 200
+    limited_response = client.get("/ping")
+    assert limited_response.status_code == 429
+    assert limited_response.json()["detail"] == (
+        "Rate limit exceeded. Please retry later."
+    )
+    assert limited_response.headers["Retry-After"] == "60"
+    assert limited_response.headers["X-RateLimit-Remaining"] == "0"

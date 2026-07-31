@@ -12,6 +12,8 @@ def fresh_user_service():
     app.dependency_overrides[get_user_service] = lambda: service
     yield service
     app.dependency_overrides.clear()
+    app.state.rate_limiter.reset()
+    app.state.rate_limiter.limit = 60
 
 
 client = TestClient(app)
@@ -83,3 +85,11 @@ def test_delete_user_not_found():
 def test_create_user_invalid_email(mocker):
     response = client.post("/users", json={"name": "Bad", "email": "not-an-email"})
     assert response.status_code == 422
+    assert response.json()["detail"] == "Request validation failed"
+
+
+def test_get_user_invalid_identifier():
+    response = client.get("/users/not-a-uuid")
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Request validation failed"
